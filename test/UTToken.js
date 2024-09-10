@@ -1,5 +1,5 @@
 const { expect } = require("chai")
-const  {loadFixture} = require("@nomicfoundation/hardhat-toolbox/network-helpers");
+const { loadFixture } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 const { string } = require("hardhat/internal/core/params/argumentTypes");
 const { ethers } = require("hardhat");
 describe("UTToken", function () {
@@ -27,15 +27,19 @@ describe("UTToken", function () {
 
         const UTContract = await ethers.getContractFactory("UTToken")
         const UTDeploy = await UTContract.deploy(preMintValue, _tokenTicker, _tokenName, _initialAddress, _actions, _txnTaxRate, _txnTaxWallet, decimals_)
-        return { UTDeploy, _tokenName, _tokenTicker, _initialAddress, }
+        return { UTDeploy, _tokenName, _tokenTicker, _initialAddress, decimals_ }
 
     }
     describe("UTToken Deployment", function () {
-        it("should set the token name", async function () {
-            const { UTDeploy, _tokenName,_tokenTicker } = await loadFixture(deployUTTokenLoadFixture)
+        it("should checks the Name, Symbol and decimals of contract", async function () {
+            const { UTDeploy, _tokenName, _tokenTicker, decimals_ } = await loadFixture(deployUTTokenLoadFixture)
             expect(await UTDeploy.name()).to.equal(_tokenName)
             expect(await UTDeploy.symbol()).to.equal(_tokenTicker)
+            expect(await UTDeploy.decimals()).to.equal(decimals_)
         })
+
+
+
     })
 })
 
