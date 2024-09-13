@@ -11,8 +11,8 @@ import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
     mapping(address => bool) public blackListedAddress;
     mapping(address => uint256) public totalStakes;
-    mapping(address => uint256) public stakeLockPeriods; // Mapping to track lock periods
-    mapping(address => uint256) public stakeTimestamps; // Mapping to track stake timestamps
+    mapping(address => uint256) public stakeLockPeriods;
+    mapping(address => uint256) public stakeTimestamps;
     uint16 public txnTaxRateBasisPoints;
     address public txnTaxWallet;
     uint8 private _decimals;
@@ -33,7 +33,7 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
     struct Stake {
         uint256 amount;
         uint256 stakeStartTimestamp;
-        uint256 lockEndTimestamp; // The timestamp when the lock period ends
+        uint256 lockEndTimestamp;
         bool unstaked;
     }
 
@@ -113,6 +113,12 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         require(!blackListedAddress[msg.sender], "User is blacklisted!");
         _;
     }
+    event Staked(
+        address indexed user,
+        uint256 amount,
+        uint256 lockEndTimestamp
+    );
+    event Unstaked(address indexed user, uint256 amount);
 
     constructor(
         uint256 preMintValue,
@@ -130,6 +136,11 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         initializeFeatures(_actions);
     }
 
+    /**
+     * @dev Initializes the token with the specified pre-minted value.
+     *
+     * @param preMintValue The amount of tokens to pre-mint.
+     */
     function initializeToken(uint256 preMintValue) internal {
         uint256 convertedValue = convertDecimals(preMintValue);
         _mint(address(this), convertedValue);
@@ -137,10 +148,21 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         emit LogTotalSupply(totalSupply(), decimals());
     }
 
+    /**
+     * @dev Returns the number of decimals for this token.
+     *
+     * @return uint8 The number of decimals.
+     */
     function decimals() public view virtual override returns (uint8) {
         return _decimals;
     }
 
+    /**
+     * @dev Initializes the tax settings for the token.
+     *
+     * @param _txnTaxRate The tax rate as a percentage.
+     * @param _txnTaxWallet The wallet address to which taxes will be sent.
+     */
     function initializeTaxSettings(uint16 _txnTaxRate, address _txnTaxWallet)
         internal
     {
@@ -149,6 +171,11 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         txnTaxRateBasisPoints = _txnTaxRate;
     }
 
+    /**
+     * @dev Initializes the features for the token.
+     *
+     * @param _actions The features to initialize.
+     */
     function initializeFeatures(smartContractActions memory _actions) private {
         actions.canStake = _actions.canStake;
         actions.canBurn = _actions.canBurn;
@@ -179,10 +206,24 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         _transferOwnership(newOwner);
     }
 
+    /**
+     * @dev Converts a given amount to the correct number of decimals for the token.
+     *
+     * @param _amount The amount to convert.
+     *
+     * @return uint256 The converted amount.
+     */
     function convertDecimals(uint256 _amount) private view returns (uint256) {
         return _amount * 10**decimals();
     }
 
+    /**
+     * @notice Allows the owner to transfer a specified amount of tokens to a user.
+     * @dev This function transfers the tokens to the user and updates the user's balance.
+     * @param user The address of the user to transfer the tokens to.
+     * @param amount The amount of tokens to transfer.
+     * @param _duration The duration for which the transfer is valid.
+     */
     function transferTokensToUser(
         address user,
         uint256 amount,
@@ -195,30 +236,28 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         require(!blackListedAddress[user], "User is blacklisted");
         require(amount > 0, "Transfer amount must be greater than zero");
 
-        // Monthly burn calculation = amount divided by the duration (in months).
-        // Assume _duration is in days and calculate how many months (_duration).
         uint256 transferAmount = amount;
-        uint256 monthlyBurnLimit = transferAmount / (_duration);
+        uint256 monthlyBurnLimit = transferAmount / _duration;
 
-        // Calculate tax if transactions tax is enabled
         if (actions.canTxTax) {
             require(
                 txnTaxRateBasisPoints > 0,
-                "set txnTaxRateBasisPoints more zero"
+                "Tax rate must be greater than zero"
             );
-            // Calculate the tax in basis points (1% = 1000 basis points)
             uint256 taxAmount = (transferAmount * txnTaxRateBasisPoints) /
                 (100 * 1000);
-            // Dividing by 100,000 because 1% = 1000 basis points
-            // 100*1000 => percent * basisPoints
-            transferAmount = transferAmount - taxAmount;
-            // Transfer tax to tax wallet
+            transferAmount -= taxAmount;
             _transfer(address(this), txnTaxWallet, taxAmount);
         }
         _transfer(address(this), user, transferAmount);
         _approve(user, owner(), monthlyBurnLimit);
     }
 
+    /**
+     * @notice Blacklists a specified user address.
+     * @dev This function adds the user address to the blacklisted addresses array and prevents any further interactions with the contract.
+     * @param _user The address of the user to blacklist.
+     */
     function blackListUser(address _user)
         public
         canBlacklistModifier
@@ -232,6 +271,11 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         blackListedAddress[_user] = true;
     }
 
+    /**
+     * @dev White lists a specified user address.
+     *
+     * @param _user The address of the user to white list.
+     */
     function whiteListUser(address _user)
         public
         canBlacklistModifier
@@ -280,6 +324,11 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         );
     }
 
+    /**
+     * @dev Allows the owner to mint a specified amount of tokens.
+     *
+     * @param _amount The amount of tokens to mint.
+     */
     function mintSupply(uint256 _amount)
         public
         canMintModifier
@@ -290,6 +339,16 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         _mint(address(this), convertDecimals(_amount));
     }
 
+    /**
+     * @dev Burns a specified amount of tokens from the contract.
+     *
+     * @param _amount The amount of tokens to burn.
+     */
+    /**
+     * @dev Burns a specified amount of tokens from the contract.
+     *
+     * @param _amount The amount of tokens to burn.
+     */
     function burnSupply(uint256 _amount)
         public
         canBurnModifier
@@ -299,28 +358,12 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         require(_amount > 0, "Burn more than Zero");
         _burn(address(this), convertDecimals(_amount));
     }
-
-    // function stakeToken(uint256 _amount, uint256 lockPeriod)
-    //     public
-    //     canStakeModifier
-    //     nonReentrant
-    //     whenNotPaused
-    //     isBlackListed
-    // {
-    //     require(
-    //         balanceOf(msg.sender) >= _amount,
-    //         "Insufficient token balance to stake"
-    //     );
-    //     require(
-    //         lockPeriod >= 1 && lockPeriod <= 12,
-    //         "Lock period must be between 1 and 12 months"
-    //     );
-    //     stakes[msg.sender] += _amount;
-    //     stakeLockPeriods[msg.sender] = lockPeriod * 30 days; // Lock period
-    //     stakeTimestamps[msg.sender] = block.timestamp; // Record the staking time
-    //     _transfer(msg.sender, address(this), _amount);
-    // }
-
+    
+    /**
+     * @notice Allows a user to unstake their total amount of tokens.
+     *
+     * @dev This function unstakes the user's entire balance of tokens and transfers them to the user's wallet.
+     */
     function unStakeTotalAmount()
         external
         canStakeModifier
@@ -328,24 +371,27 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         whenNotPaused
         isBlackListed
     {
-        require(totalStakes[msg.sender] > 0, "User doesn't have any staked token!");
         require(
-            block.timestamp >=
-                stakeTimestamps[msg.sender] + stakeLockPeriods[msg.sender],
-            "Tokens are still locked"
+            totalStakes[msg.sender] > 0,
+            "User doesn't have any staked token!"
         );
+        // require(
+        //     block.timestamp >=
+        //         stakeTimestamps[msg.sender] + stakeLockPeriods[msg.sender],
+        //     "Tokens are still locked"
+        // );
         uint256 amountToUnstake = totalStakes[msg.sender];
         totalStakes[msg.sender] = 0;
         _transfer(address(this), msg.sender, amountToUnstake);
     }
 
-    event Staked(
-        address indexed user,
-        uint256 amount,
-        uint256 lockEndTimestamp
-    );
-    event Unstaked(address indexed user, uint256 amount);
-
+    /**
+     * @notice Allows a user to stake a specified amount of tokens.
+     * @dev This function adds a new stake to the user's stakes array and updates their total staked amount.
+     * @param _amount The amount of tokens to stake.
+     * @param _lockDuration The lock duration for the staked tokens in days.
+     * @param _lockDuration The lock duration for the staked tokens in days.
+     */
     function stake(uint256 _amount, uint256 _lockDuration)
         external
         canStakeModifier
@@ -368,87 +414,53 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         emit Staked(msg.sender, _amount, newStake.lockEndTimestamp);
     }
 
-  function unstakeToken(uint256 _amount) external canStakeModifier
+    /**
+     * @notice Allows a user to unstake a specified amount of tokens.
+     * @dev This function iterates over the user's stakes, unstaking the requested amount from the earliest stake first.
+     * @param _amount The amount of tokens to unstake.
+     */
+    function unstakeToken(uint256 _amount)
+        external
+        canStakeModifier
         nonReentrant
         whenNotPaused
-        isBlackListed{
+        isBlackListed
+    {
         require(_amount > 0, "Amount must be greater than zero");
         uint256 remainingAmountToUnstake = _amount;
         uint256 totalUnstakedAmount = 0;
 
-        // Loop through the user's stakes in reverse order
         for (uint256 i = userStakes[msg.sender].length; i > 0; i--) {
             Stake storage userStake = userStakes[msg.sender][i - 1];
 
-            // If the stake is not yet fully unstaked
             if (!userStake.unstaked) {
                 if (userStake.amount <= remainingAmountToUnstake) {
-                    // Fully unstake this stake
                     remainingAmountToUnstake -= userStake.amount;
                     totalUnstakedAmount += userStake.amount;
                     userStake.amount = 0;
-                    userStake.unstaked = true; // Mark as fully unstaked
+                    userStake.unstaked = true;
                 } else {
-                    // Partially unstake from this stake
                     totalUnstakedAmount += remainingAmountToUnstake;
                     userStake.amount -= remainingAmountToUnstake;
                     remainingAmountToUnstake = 0;
                 }
 
-                // If we've unstaked the full requested amount, exit the loop
                 if (remainingAmountToUnstake == 0) {
                     break;
                 }
             }
         }
 
-        require(totalUnstakedAmount == _amount, "Not enough staked balance to unstake the requested amount");
+        require(
+            totalUnstakedAmount == _amount,
+            "Not enough staked balance to unstake the requested amount"
+        );
 
-        // Transfer the unstaked tokens back to the user
-        // Assuming the contract holds the staked tokens
-        totalStakes[msg.sender]-= totalUnstakedAmount;
+        totalStakes[msg.sender] -= totalUnstakedAmount;
         _transfer(address(this), msg.sender, totalUnstakedAmount);
 
         emit Unstaked(msg.sender, totalUnstakedAmount);
     }
-    // function unstakeToken(uint256 _amount) external {
-    //     require(_amount > 0, "Amount must be greater than zero");
-    //     uint256 totalUnstakedAmount = 0;
-
-    //     for (uint256 i = 0; i < userStakes[msg.sender].length; i++) {
-    //         Stake storage userStake = userStakes[msg.sender][i];
-    //         if (_amount >= totalUnstakedAmount && !userStake.unstaked) {
-    //             totalUnstakedAmount += userStake.amount;
-    //             userStake.amount-= totalUnstakedAmount - userStake.amount;
-    //             userStake.unstaked = true;
-
-    //             if(totalUnstakedAmount>= _amount){
-    //                 break ;
-    //             }
-    //         }
-    //     }
-    //     _transfer(address(this), msg.sender, totalUnstakedAmount);
-    //     emit Unstaked(msg.sender, totalUnstakedAmount);
-    // }
-
-    // function unstakeToken(uint256 _amount)
-    //     public
-    //     canStakeModifier
-    //     nonReentrant
-    //     isBlackListed
-    // {
-    //     require(
-    //         stakes[msg.sender] >= _amount,
-    //         "User doesn't have enough staked token!"
-    //     );
-    //     require(
-    //         block.timestamp >=
-    //             stakeTimestamps[msg.sender] + stakeLockPeriods[msg.sender],
-    //         "Tokens are still locked"
-    //     );
-    //     stakes[msg.sender] -= _amount;
-    //     _transfer(address(this), msg.sender, _amount);
-    // }
 
     function burnFrom(address _user, uint256 _amount) public onlyOwner {
         uint256 currentAllowance = allowance(_user, owner());

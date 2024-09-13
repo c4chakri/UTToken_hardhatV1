@@ -11,7 +11,22 @@ REPORT_GAS=true npx hardhat test
 npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/UTToken.js
 ```
+#Deployement
+```
+Hardhat Ignition 🚀
 
+Deploying [ UTToken ]
+
+Batch #1
+  Executed UTToken#UTToken
+
+[ UTToken ] successfully deployed 🚀
+
+Deployed Addresses
+
+UTToken#UTToken - 0x5FbDB2315678afecb367f032d93F642f64180aa3
+```
+#Testing
 ```
   UTToken
     UTToken Deployment
