@@ -1,6 +1,6 @@
-# Sample Hardhat Project
+# UTToken Hardhat Project
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
+This project demonstrates a basic UTToken Hardhat use case. It comes with a UTToken contract, a test for that contract, and a Hardhat Ignition module that deploys UTToken contract.
 
 Try running some of the following tasks:
 
@@ -11,7 +11,7 @@ REPORT_GAS=true npx hardhat test
 npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/UTToken.js
 ```
-#Deployement
+# Deployement
 ```
 Hardhat Ignition 🚀
 
@@ -26,7 +26,7 @@ Deployed Addresses
 
 UTToken#UTToken - 0x5FbDB2315678afecb367f032d93F642f64180aa3
 ```
-#Testing
+# Testing
 ```
   UTToken
     UTToken Deployment
