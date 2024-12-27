@@ -163,9 +163,10 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
      * @param _txnTaxRate The tax rate as a percentage.
      * @param _txnTaxWallet The wallet address to which taxes will be sent.
      */
-    function initializeTaxSettings(uint16 _txnTaxRate, address _txnTaxWallet)
-        internal
-    {
+    function initializeTaxSettings(
+        uint16 _txnTaxRate,
+        address _txnTaxWallet
+    ) internal {
         require(_txnTaxWallet != address(0), "TxnTax Wallet can't be empty");
         txnTaxWallet = _txnTaxWallet;
         txnTaxRateBasisPoints = _txnTaxRate;
@@ -197,12 +198,9 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         _unpause();
     }
 
-    function transferOwnership(address newOwner)
-        public
-        override
-        canChangeOwnerModifier
-        onlyOwner
-    {
+    function transferOwnership(
+        address newOwner
+    ) public override canChangeOwnerModifier onlyOwner {
         _transferOwnership(newOwner);
     }
 
@@ -214,7 +212,7 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
      * @return uint256 The converted amount.
      */
     function convertDecimals(uint256 _amount) private view returns (uint256) {
-        return _amount * 10**decimals();
+        return _amount * 10 ** decimals();
     }
 
     /**
@@ -258,12 +256,9 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
      * @dev This function adds the user address to the blacklisted addresses array and prevents any further interactions with the contract.
      * @param _user The address of the user to blacklist.
      */
-    function blackListUser(address _user)
-        public
-        canBlacklistModifier
-        onlyOwner
-        whenNotPaused
-    {
+    function blackListUser(
+        address _user
+    ) public canBlacklistModifier onlyOwner whenNotPaused {
         require(
             !blackListedAddress[_user],
             "User Address is already blacklisted"
@@ -276,42 +271,30 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
      *
      * @param _user The address of the user to white list.
      */
-    function whiteListUser(address _user)
-        public
-        canBlacklistModifier
-        onlyOwner
-        whenNotPaused
-    {
+    function whiteListUser(
+        address _user
+    ) public canBlacklistModifier onlyOwner whenNotPaused {
         require(blackListedAddress[_user], "User Address is not blacklisted");
         blackListedAddress[_user] = false;
     }
 
-    function setTxnTaxRateBasisPoints(uint16 _rateValue)
-        public
-        canTxTaxModifier
-        onlyOwner
-        whenNotPaused
-    {
+    function setTxnTaxRateBasisPoints(
+        uint16 _rateValue
+    ) public canTxTaxModifier onlyOwner whenNotPaused {
         require(_rateValue > 0, "Rate must be grater than 0");
         txnTaxRateBasisPoints = _rateValue;
     }
 
-    function setTxnTaxWallet(address _txnTaxWallet)
-        public
-        canTxTaxModifier
-        onlyOwner
-        whenNotPaused
-    {
+    function setTxnTaxWallet(
+        address _txnTaxWallet
+    ) public canTxTaxModifier onlyOwner whenNotPaused {
         require(_txnTaxWallet != address(0), "Txn tax wallet can't be empty");
         txnTaxWallet = _txnTaxWallet;
     }
 
-    function buyBackTokens(uint256 amountOutMin)
-        external
-        payable
-        canBuyBackModifier
-        whenNotPaused
-    {
+    function buyBackTokens(
+        uint256 amountOutMin
+    ) external payable canBuyBackModifier whenNotPaused {
         address[] memory path = new address[](2);
         path[0] = uniswapRouter.WETH(); //Weth contract address
         path[1] = address(this); // erc20 address of this contract
@@ -329,12 +312,9 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
      *
      * @param _amount The amount of tokens to mint.
      */
-    function mintSupply(uint256 _amount)
-        public
-        canMintModifier
-        onlyOwner
-        whenNotPaused
-    {
+    function mintSupply(
+        uint256 _amount
+    ) public canMintModifier onlyOwner whenNotPaused {
         require(_amount > 0, "Mint more than Zero");
         _mint(address(this), convertDecimals(_amount));
     }
@@ -349,16 +329,13 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
      *
      * @param _amount The amount of tokens to burn.
      */
-    function burnSupply(uint256 _amount)
-        public
-        canBurnModifier
-        onlyOwner
-        whenNotPaused
-    {
+    function burnSupply(
+        uint256 _amount
+    ) public canBurnModifier onlyOwner whenNotPaused {
         require(_amount > 0, "Burn more than Zero");
         _burn(address(this), convertDecimals(_amount));
     }
-    
+
     /**
      * @notice Allows a user to unstake their total amount of tokens.
      *
@@ -392,13 +369,10 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
      * @param _lockDuration The lock duration for the staked tokens in days.
      * @param _lockDuration The lock duration for the staked tokens in days.
      */
-    function stake(uint256 _amount, uint256 _lockDuration)
-        external
-        canStakeModifier
-        nonReentrant
-        whenNotPaused
-        isBlackListed
-    {
+    function stake(
+        uint256 _amount,
+        uint256 _lockDuration
+    ) external canStakeModifier nonReentrant whenNotPaused isBlackListed {
         require(_amount > 0, "Amount must be greater than zero");
         require(_lockDuration > 0, "Lock duration must be greater than zero");
 
@@ -419,13 +393,9 @@ contract UTToken is ERC20, Ownable, Pausable, ReentrancyGuard {
      * @dev This function iterates over the user's stakes, unstaking the requested amount from the earliest stake first.
      * @param _amount The amount of tokens to unstake.
      */
-    function unstakeToken(uint256 _amount)
-        external
-        canStakeModifier
-        nonReentrant
-        whenNotPaused
-        isBlackListed
-    {
+    function unstakeToken(
+        uint256 _amount
+    ) external canStakeModifier nonReentrant whenNotPaused isBlackListed {
         require(_amount > 0, "Amount must be greater than zero");
         uint256 remainingAmountToUnstake = _amount;
         uint256 totalUnstakedAmount = 0;

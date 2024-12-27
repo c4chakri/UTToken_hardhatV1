@@ -79,7 +79,7 @@ describe("UTToken", function () {
         });
 
     })
-    describe("UTTpken : Burn Supply",function(){
+    describe("UTToken : Burn Supply",function(){
         it("should successfully burn tokens when called by owner", async function() {
             const { UTDeploy, _initialAddress } = await loadFixture(deployUTTokenLoadFixture);
             const burnAmount = BigInt(1000);
