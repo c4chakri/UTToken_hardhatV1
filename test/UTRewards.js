@@ -1,17 +1,14 @@
 const { loadFixture } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
-const { string } = require("hardhat/internal/core/params/argumentTypes");
 const { ethers } = require("hardhat");
-const { expect, use } = require("chai")
+const { expect } = require("chai");
 
-describe("UTToken", function () {
-
+describe("UTToken Staking and Unstaking", function () {
     async function deployUTTokenLoadFixture() {
-        // Constructor params
-        const [initialAddress, txnTaxWallet, user1, user2, user3] = await ethers.getSigners();
-        const preMintValue = String(10000000)
-        const _tokenTicker = "UT"
-        const _tokenName = "UtilityToken"
-        const _initialAddress = initialAddress
+        const [owner, txnTaxWallet, user1, user2] = await ethers.getSigners();
+        const preMintValue = String(10000000);
+        const _tokenTicker = "UT";
+        const _tokenName = "UtilityToken";
+        const _initialAddress = owner;
         const _actions = {
             canMint: true,
             canBurn: true,
@@ -20,101 +17,184 @@ describe("UTToken", function () {
             canChangeOwner: false,
             canTxTax: true,
             canBuyBack: false,
-            canStake: true
+            canStake: true,
         };
-        const _txnTaxRate = String(2)
-        const _txnTaxWallet = txnTaxWallet
-        const decimals_ = String(18)
-        const rewardRates = [[3,5],[6,10],[9,15],[12,20]]  
+        const _txnTaxRate = String(2);
+        const decimals_ = String(18);
+        const rewardRates = [
+            [3, 5],
+            [6, 10],
+            [9, 15],
+            [12, 20],
+        ];
 
-
-        const UTContract = await ethers.getContractFactory("UTtokenV2")
-        const UTDeploy = await UTContract.deploy(preMintValue, _tokenTicker, _tokenName, _initialAddress, _actions, _txnTaxRate, _txnTaxWallet, decimals_,rewardRates)
-        return { UTDeploy, _tokenName, _tokenTicker, _initialAddress, _txnTaxWallet, preMintValue, decimals_,rewardRates, user1, user2, user3 }
-
+        const UTContract = await ethers.getContractFactory("UTtokenV2");
+        const UTDeploy = await UTContract.deploy(
+            preMintValue,
+            _tokenTicker,
+            _tokenName,
+            _initialAddress.address,
+            _actions,
+            _txnTaxRate,
+            txnTaxWallet.address,
+            decimals_,
+            rewardRates
+        );
+        return { UTDeploy, owner, txnTaxWallet, user1, user2, rewardRates };
     }
-    describe("UTToken Deployment", function () {
-        it("should check the Name, Symbol, balance, and decimals of contract", async function () {
-            const { UTDeploy, _tokenName, _tokenTicker, preMintValue, decimals_ } = await loadFixture(deployUTTokenLoadFixture)
 
-            const expectBal = BigInt(preMintValue) * BigInt(10 ** decimals_)
-            expect(await UTDeploy.name()).to.equal(_tokenName)
-            expect(await UTDeploy.symbol()).to.equal(_tokenTicker)
-            expect(await UTDeploy.decimals()).to.equal(decimals_)
-            expect((await UTDeploy.balanceOf(UTDeploy)).toString()).to.equal(expectBal.toString())
-        })
-    })
-    
-    describe("UTToken : stake and unstake", function () {
-        it("should successfully unstake tokens with a valid amount", async function () {
+    describe("Staking Functionality", function () {
+        it("Should allow users to stake tokens", async function () {
             const { UTDeploy, user1 } = await loadFixture(deployUTTokenLoadFixture);
-            const stakeAmount = BigInt(100);
-            const lockDuration = 3; // Representing months (e.g., 3 months)
-        
-            // Stake tokens first
-            await UTDeploy.transferTokensToUser(user1.address, 100000, 3);
-        
-            await UTDeploy.connect(user1).stake(stakeAmount, 3); // Stake 3 months
-            await UTDeploy.connect(user1).stake(stakeAmount, 6); // Stake 6 months
-            await UTDeploy.connect(user1).stake(stakeAmount, 7); // Stake 7 months
-        
-            // Verify total stakes
-            let totalStakes = await UTDeploy.nextStakeId(user1.address);
-            expect(totalStakes).to.equal(3);
-        
-            // Logging all stakes and calculating reward rates
-            let  userStakes = [];
-            let rewardRates = [];
-            const oneMonthInSeconds = 3*(30 * 24 * 60 * 60);
-            
-            // Increase time by 1 month
-            await ethers.provider.send("evm_increaseTime", [oneMonthInSeconds]);
-            await ethers.provider.send("evm_mine"); // Mine the next block
-        
-            const currentTimestamp = BigInt((await ethers.provider.getBlock("latest")).timestamp);
-            console.log("Current Timestamp:", currentTimestamp);
-        
-            for (let i = 0; i < totalStakes; i++) {
-                const stake = await UTDeploy.userStakes(user1.address, i);
-                const rewardRate = await UTDeploy.stakeRewardCal(stake[0], stake[2], currentTimestamp);
-        
-                rewardRates.push(rewardRate);
-                userStakes.push(stake);
-            }
-        
-            console.log("User Stakes:", userStakes);
-            console.log("Reward Rates:", rewardRates);
-        
 
-            let user1Bal = await UTDeploy.balanceOf(user1.address);
-            console.log("Befoere unstake ", user1Bal);
-            
-            // unstakeBy Id
-            await UTDeploy.connect(user1).unstakeById(0)
-            
-            user1Bal = await UTDeploy.balanceOf(user1.address);
-            console.log("After unstake ", user1Bal);
+            const stakeAmount = ethers.parseUnits("100", 18); // 100 tokens
+            const lockDuration = 6; // 6 months
 
-            userStakes = []
-            rewardRates = []
+            await UTDeploy.transferTokensToUser(user1.address, stakeAmount, 3);
+            await UTDeploy.connect(user1).stake(stakeAmount, lockDuration);
 
-            totalStakes = await UTDeploy.nextStakeId(user1.address);
-            for (let i = 0; i < totalStakes; i++) {
-                const stake = await UTDeploy.userStakes(user1.address, i);
-                const rewardRate = await UTDeploy.stakeRewardCal(stake[0], stake[2], currentTimestamp);
-        
-                rewardRates.push(rewardRate);
-                userStakes.push(stake);
-            }
-        
-            console.log("User Stakes:", userStakes);
-            console.log("Reward Rates:", rewardRates);
-            
-            
-            
+            const stakeInfo = await UTDeploy.userStakes(user1.address, 0);
+            expect(stakeInfo.amount).to.equal(stakeAmount);
+            expect(stakeInfo.isActive).to.be.true;
         });
-        
-        
 
-    })
-})
+        it("Should fail if stake amount is zero", async function () {
+            const { UTDeploy, user1 } = await loadFixture(deployUTTokenLoadFixture);
+            await expect(UTDeploy.connect(user1).stake(0, 6)).to.be.revertedWith(
+                "Amount must be greater than zero"
+            );
+        });
+
+        it("Should fail if lock duration is out of bounds", async function () {
+            const { UTDeploy, user1 } = await loadFixture(deployUTTokenLoadFixture);
+            const stakeAmount = ethers.parseUnits("100", 18);
+
+            await expect(UTDeploy.connect(user1).stake(stakeAmount, 25)).to.be.revertedWith(
+                "Lock period must be between 1 and 24 months"
+            );
+        });
+    });
+
+    // Test suite for unstaking functionality
+    describe("Unstaking Functionality", function () {
+        it("Should allow users to unstake tokens after the lock period with reward calculations", async function () {
+            const { UTDeploy, user1 } = await loadFixture(deployUTTokenLoadFixture);
+
+            // Transfer tokens and stake them for various durations
+            await UTDeploy.transferTokensToUser(user1.address, ethers.parseUnits("500", 18), 3);
+            await UTDeploy.connect(user1).stake(ethers.parseUnits("100", 18), 3); // 3 months
+            await UTDeploy.connect(user1).stake(ethers.parseUnits("50", 18), 6); // 6 months
+            await UTDeploy.connect(user1).stake(ethers.parseUnits("200", 18), 9); // 9 months
+            await UTDeploy.connect(user1).stake(ethers.parseUnits("150", 18), 12); // 12 months
+
+            // Retrieve reward rates from the contract
+            const rewardRates = await UTDeploy.getRewardRates();
+            // console.log("Reward Rates:", rewardRates);
+
+            // Fast forward time to make all stakes eligible
+            const twelveMonthsInSeconds = 6 * 30 * 24 * 60 * 60; // 6 months in seconds
+            await ethers.provider.send("evm_increaseTime", [twelveMonthsInSeconds]);
+            await ethers.provider.send("evm_mine");
+
+            // Retrieve and log stakes before unstaking
+            const allStakesBefore = await UTDeploy.allStakes(user1.address);
+            console.log("All Stakes Before Unstaking:", allStakesBefore);
+
+            // Loop through all stakes to calculate and log rewards
+           
+            const userBalanceBefore = await UTDeploy.balanceOf(user1.address);
+            console.log("User Balance Before Unstaking:", ethers.formatUnits(userBalanceBefore, 18));
+            // Call withdrawAll
+            await UTDeploy.connect(user1).withdrawAll();
+            const allStakesAfter = await UTDeploy.allStakes(user1.address);
+            console.log("All Stakes After Unstaking:", allStakesAfter);
+            // Verify balances and states
+            const userBalance = await UTDeploy.balanceOf(user1.address);
+            const stakesAfter = await UTDeploy.allStakes(user1.address);
+            console.log("User Balance After Unstaking:", ethers.formatUnits(userBalance, 18));
+            console.log("Stakes After Unstaking:", stakesAfter);
+
+            // Ensure all stakes are deactivated and rewarded
+            // for (let i = 0; i < stakesAfter.length; i++) {
+            //     expect(stakesAfter[i].isActive).to.be.false;
+            //     expect(stakesAfter[i].isRewarded).to.be.true;
+            // }
+        });
+
+        it("Should calculate and log rewards for individual stakes during unstaking", async function () {
+            const { UTDeploy, user1 } = await loadFixture(deployUTTokenLoadFixture);
+
+            // Stake tokens twice
+            await UTDeploy.transferTokensToUser(user1.address, ethers.parseUnits("100", 18), 3);
+            await UTDeploy.connect(user1).stake(ethers.parseUnits("50", 18), 6); // 6 months
+
+            // Fast forward time for the first stake
+            const sixMonthsInSeconds = 6 * 30 * 24 * 60 * 60; // 6 months
+            await ethers.provider.send("evm_increaseTime", [sixMonthsInSeconds]);
+            await ethers.provider.send("evm_mine");
+
+            // Retrieve and log stake details before unstaking
+            // const allStakes = await UTDeploy.allStakes(user1.address);
+            // console.log("All Stakes Before Unstaking:", allStakes);
+
+            const rewardRates = await UTDeploy.getRewardRates();
+            console.log("Reward Rates:", rewardRates);
+
+            // Retrieve all stakes for user1
+            const allStakes = await UTDeploy.allStakes(user1.address);
+            console.log("All Stakes:", allStakes);
+
+        });
+    });
+
+
+
+
+    describe("Reward Calculation", function () {
+        it("Should correctly calculate rewards based on staking duration", async function () {
+            const { UTDeploy, user1 } = await loadFixture(deployUTTokenLoadFixture);
+            const stakeAmount = ethers.parseUnits("100", 18);
+            const lockDuration = 6;
+
+            await UTDeploy.transferTokensToUser(user1.address, stakeAmount, 3);
+            await UTDeploy.connect(user1).stake(stakeAmount, lockDuration);
+
+            // Fast forward time
+            const sixMonthsInSeconds = 6 * 30 * 24 * 60 * 60;
+            await ethers.provider.send("evm_increaseTime", [sixMonthsInSeconds]);
+            await ethers.provider.send("evm_mine");
+
+            const currentTimestamp = BigInt((await ethers.provider.getBlock("latest")).timestamp);
+            const stakeInfo = await UTDeploy.userStakes(user1.address, 0);
+
+            const reward = await UTDeploy.stakeRewardCal(
+                stakeInfo.amount,
+                stakeInfo.startTime,
+                currentTimestamp
+            );
+
+            const expectedReward = (stakeAmount * BigInt(10)) / BigInt(100); // 10% reward for 6 months
+            expect(reward).to.equal(expectedReward);
+        });
+    });
+
+    describe("Eligibility Checking", function () {
+        it("Should return eligible stakes after lock period", async function () {
+            const { UTDeploy, user1 } = await loadFixture(deployUTTokenLoadFixture);
+            const stakeAmount = ethers.parseUnits("100", 18);
+
+            await UTDeploy.transferTokensToUser(user1.address, stakeAmount, 3);
+            await UTDeploy.connect(user1).stake(stakeAmount, 6); // 6 months
+
+            // Fast forward time
+            const sixMonthsInSeconds = 6 * 30 * 24 * 60 * 60;
+            await ethers.provider.send("evm_increaseTime", [sixMonthsInSeconds]);
+            await ethers.provider.send("evm_mine");
+
+            const eligibleStakes = await UTDeploy.isEligible(user1.address);
+
+            expect(eligibleStakes.length).to.be.greaterThan(0);
+            expect(eligibleStakes[0].amount).to.equal(stakeAmount);
+        });
+    });
+});

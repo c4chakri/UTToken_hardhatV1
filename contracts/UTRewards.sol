@@ -30,12 +30,25 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
         bool canBuyBack;
         bool canStake;
     }
+    struct ConditionalTokens {
+        uint256 incentiveId;
+        uint256 _amt;
+        uint256 _duration;
+        uint256 _burningTime;
+        bool _isBurnt;
+        // bool _isSubscribed;
+    }
+
+    mapping(address => uint256) public incentiveId;
+    mapping(address => ConditionalTokens[]) public conditionalTokens;
+    mapping(address => uint256) public frozenTokens;
 
     struct StakeInfo {
-        uint256 amount; // Amount staked
-        uint256 lockUntil; // Lock period end timestamp
-        uint256 startTime; // Staking start timestamp
-        bool isActive; // Status of the stake
+        uint256 id;
+        uint256 amount;
+        uint256 lockUntil;
+        uint256 startTime;
+        bool isActive;
         bool isRewarded;
     }
     struct TokenRewardRate {
@@ -157,6 +170,39 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
         }
     }
 
+    function conditionalTokenTransfer(
+        address _user,
+        uint256 _amt,
+        uint8 _months
+    ) public {
+        require(_amt > 0, "Transfer amount must be greater than zero.");
+        require(_months > 0, "Months must be greater than zero.");
+        require(_user != address(0), "Invalid user address.");
+        require(
+            balanceOf(msg.sender) >= _amt,
+            "Insufficient balance for transfer."
+        );
+
+        ConditionalTokens[] storage tokens = conditionalTokens[_user];
+
+        uint256 id = incentiveId[_user];
+
+        ConditionalTokens memory _tokenInfo = ConditionalTokens(
+            id,
+            _amt,
+            uint256(_months),
+            block.timestamp + (_months * 30 days),
+            false
+        );
+
+        incentiveId[_user]++;
+        tokens.push(_tokenInfo);
+
+        frozenTokens[_user] += _amt;
+
+        _transfer(msg.sender, _user, _amt);
+    }
+
     function initializeToken(uint256 preMintValue) internal {
         uint256 convertedValue = convertDecimals(preMintValue);
         _mint(address(this), convertedValue);
@@ -184,6 +230,18 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
         txnTaxRateBasisPoints = _txnTaxRate;
     }
 
+    function withdrawAll() external {
+        StakeInfo[] memory tempStakes = isEligible(msg.sender);
+        require(tempStakes.length > 0, "No stakes to withdraw");
+
+        for (uint256 i = 0; i < tempStakes.length; ) {
+            unStakeById(tempStakes[i].id);
+            unchecked {
+                i++;
+            }
+        }
+    }
+
     function isEligible(address _staker)
         public
         view
@@ -195,16 +253,15 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
         // Create a temporary array with a size equal to the total stake count
         StakeInfo[] memory tempStakes = new StakeInfo[](stakeCount);
 
-        // Single pass: Filter eligible stakes
         for (uint256 i = 0; i < stakeCount; ) {
-            StakeInfo memory stake = userStakes[_staker][i];
-            if (block.timestamp >= stake.lockUntil) {
-                tempStakes[index] = stake;
+            StakeInfo memory _stake = userStakes[_staker][i];
+            if (block.timestamp >= _stake.lockUntil && !_stake.isRewarded && _stake.amount>0) {
+                tempStakes[index] = _stake;
                 index++;
             }
             unchecked {
                 i++;
-            } // Use unchecked to save gas
+            }
         }
 
         // Create the final array with the exact size of eligible stakes
@@ -291,7 +348,7 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
         _transfer(address(this), user, amount);
     }
 
-    function burnExpiredTokens(address user) internal {
+    function burnExpiredTokens(address user) public {
         if (
             restrictedBalances[user] > 0 &&
             block.timestamp > restrictedUntil[user]
@@ -299,6 +356,26 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
             uint256 amountToBurn = restrictedBalances[user];
             restrictedBalances[user] = 0;
             _burn(user, amountToBurn);
+        }
+
+        // Iterate through the conditional tokens array and burn expired tokens
+        ConditionalTokens[] storage userTokens = conditionalTokens[user];
+        uint256 length = userTokens.length;
+
+        for (uint256 i = 0; i < length; ) {
+            if (
+                block.timestamp > userTokens[i]._burningTime &&
+                !userTokens[i]._isBurnt
+            ) {
+                uint256 amountToBurn = userTokens[i]._amt;
+                userTokens[i]._amt = 0;
+                frozenTokens[user] -= amountToBurn;
+                userTokens[i]._isBurnt = true;
+                _burn(user, amountToBurn);
+            }
+            unchecked {
+                i++;
+            }
         }
     }
 
@@ -310,8 +387,9 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
         // Burn expired restricted tokens before allowing transfer
         burnExpiredTokens(msg.sender);
 
+        uint256 actualBal = balanceOf(msg.sender) - frozenTokens[msg.sender];
         // Calculate unrestricted balance
-        uint256 unrestrictedBalance = balanceOf(msg.sender) -
+        uint256 unrestrictedBalance = actualBal -
             restrictedBalances[msg.sender];
 
         require(
@@ -442,8 +520,6 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
         _burn(address(this), convertDecimals(_amount));
     }
 
-   
-
     function stake(uint256 _amount, uint256 _lockDuration)
         external
         canStakeModifier
@@ -459,6 +535,7 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
         uint256 stakeId = nextStakeId[msg.sender];
         nextStakeId[msg.sender]++;
         userStakes[msg.sender][stakeId] = StakeInfo({
+            id: stakeId,
             amount: _amount,
             startTime: block.timestamp,
             lockUntil: block.timestamp + (_lockDuration * 30 days), // add 30 days
@@ -476,38 +553,39 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
         );
     }
 
-    function unstakeById(uint8 _stakeId)
-        external
+    function unStakeById(uint256 _stakeId)
+        public
         canStakeModifier
         nonReentrant
         whenNotPaused
         isBlackListed
     {
-        // Validate stake ID
         require(_stakeId < nextStakeId[msg.sender], "Invalid stake ID");
 
         StakeInfo storage userStake = userStakes[msg.sender][_stakeId];
 
-        // Ensure the stake is active and not rewarded
-        require(userStake.isActive, "Stake is not active");
         require(!userStake.isRewarded, "Stake has already been rewarded");
         require(userStake.amount > 0, "No staked amount available to unstake");
-        // Check if the lock period has expired
         require(
             block.timestamp >= userStake.lockUntil,
             "Stake is still locked"
         );
 
         uint256 unstakeAmount = userStake.amount;
-        uint256 rewardAmt = stakeRewardCal(userStake.amount, userStake.startTime, block.timestamp);
+        uint256 rewardAmt = stakeRewardCal(
+            userStake.amount,
+            userStake.startTime,
+            block.timestamp
+        );
 
-        // Update stake info
-        userStake.amount = 0;
+        // Mark as rewarded and inactive
         userStake.isActive = false;
         userStake.isRewarded = true;
 
         // Transfer tokens back to the user
         _transfer(address(this), msg.sender, unstakeAmount + rewardAmt);
+
+        
     }
 
     function unstake(uint256 _amount)
@@ -531,12 +609,7 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
                     remainingAmountToUnstake -= userStake.amount;
                     totalUnstakedAmount += userStake.amount;
                     userStake.amount = 0;
-                    userStake.isRewarded = true;
-
-                    // Deactivate stake if the lock period has expired
-                    if (block.timestamp >= userStake.lockUntil) {
-                        userStake.isActive = false;
-                    }
+                    userStake.isActive = false;
                 } else {
                     totalUnstakedAmount += remainingAmountToUnstake;
                     userStake.amount -= remainingAmountToUnstake;
@@ -554,8 +627,6 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
             totalUnstakedAmount == _amount,
             "Not enough staked balance to unstake the requested amount"
         );
-
-        
 
         // Transfer tokens back to the user
         _transfer(address(this), msg.sender, totalUnstakedAmount);
@@ -582,13 +653,13 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
         uint256 _start,
         uint256 _end
     ) public view returns (uint256) {
-        uint256 stakedDuration = (_end - _start)/30 days; // divide 30 days
+        uint256 stakedDuration = (_end - _start) / 30 days; // divide 30 days
         require(stakedDuration > 0, "Staked duration must be at least 1 month");
 
         uint256 reward = 0;
 
         for (uint256 i = 0; i < rewardRates.length; i++) {
-            if (stakedDuration >= rewardRates[i].months ) {
+            if (stakedDuration >= rewardRates[i].months) {
                 reward = (_amt * rewardRates[i].rewardRate) / 100;
             } else {
                 break;
@@ -596,5 +667,30 @@ contract UTtokenV2 is ERC20, Ownable, Pausable, ReentrancyGuard {
         }
 
         return reward;
+    }
+
+    function allStakes(address _user) public view returns (StakeInfo[] memory) {
+        uint256 length = nextStakeId[_user];
+        uint256 activeCount = 0;
+
+        // First, count the active stakes to size the array correctly
+        for (uint256 i = 0; i < length; i++) {
+            if (userStakes[_user][i].isActive) {
+                activeCount++;
+            }
+        }
+
+        StakeInfo[] memory tempStakes = new StakeInfo[](activeCount);
+        uint256 index = 0;
+
+        // Populate the tempStakes array with active stakes
+        for (uint256 i = 0; i < length; i++) {
+            if (userStakes[_user][i].isActive) {
+                tempStakes[index] = userStakes[_user][i];
+                index++;
+            }
+        }
+
+        return tempStakes;
     }
 }
