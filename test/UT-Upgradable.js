@@ -139,8 +139,11 @@ describe("Upgradable Proxy UT", function () {
             
            await utv2.connect(owner).transferUnrestrictedTokens(user1.address, String(1000))
            console.log(await utv2.balanceOf(user1.address));
-           
-           
+      
+
+
+
+         
            // implermentation 3
 
            const UTV3 = await ethers.getContractFactory("UTtokenUpgradeable")
